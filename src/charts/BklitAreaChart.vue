@@ -1,0 +1,16 @@
+<script setup lang="ts">
+import BklitCartesianChart from "./BklitCartesianChart.vue";
+import type { ChartAxis, ChartSeries } from "../types";
+
+withDefaults(defineProps<{
+  series: ChartSeries[];
+  axes?: ChartAxis[];
+  height?: number;
+  showLegend?: boolean;
+  formatValue?: (value: number) => string;
+}>(), { axes: () => [{ id: "primary", side: "left" }], height: 320, showLegend: true, formatValue: (value: number) => value.toLocaleString() });
+</script>
+
+<template>
+  <BklitCartesianChart v-bind="$props" kind="area" aria-label="Gráfico de áreas" />
+</template>

@@ -1,0 +1,17 @@
+<script setup lang="ts">
+import BklitCartesianChart from "./BklitCartesianChart.vue";
+import type { ChartAxis, ChartSeries } from "../types";
+
+withDefaults(defineProps<{
+  series: ChartSeries[];
+  axes?: ChartAxis[];
+  height?: number;
+  stacked?: boolean;
+  showLegend?: boolean;
+  formatValue?: (value: number) => string;
+}>(), { axes: () => [{ id: "primary", side: "left" }], height: 320, stacked: false, showLegend: true, formatValue: (value: number) => value.toLocaleString() });
+</script>
+
+<template>
+  <BklitCartesianChart v-bind="$props" kind="composed" aria-label="Gráfico combinado" />
+</template>

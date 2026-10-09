@@ -1,0 +1,46 @@
+{
+  "name": "bklit-vue-charts",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "description": "An unofficial Vue 3 port of the open-source Bklit UI chart components.",
+  "files": ["dist", "LICENSE", "NOTICE.md", "README.md"],
+  "main": "./dist/bklit-vue-charts.umd.cjs",
+  "module": "./dist/bklit-vue-charts.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/bklit-vue-charts.js",
+      "require": "./dist/bklit-vue-charts.umd.cjs"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "typecheck": "vue-tsc --noEmit",
+    "build:types": "vue-tsc --declaration --emitDeclarationOnly --outDir dist/types",
+    "build": "npm run typecheck && npm run build:types && vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "peerDependencies": {
+    "vue": "^3.3.0"
+  },
+  "dependencies": {
+    "d3-array": "^3.2.4",
+    "d3-scale": "^4.0.2",
+    "d3-shape": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/d3-array": "^3.2.1",
+    "@types/d3-scale": "^4.0.9",
+    "@types/d3-shape": "^3.1.6",
+    "@types/node": "^22.13.10",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.5",
+    "vue": "^3.5.13",
+    "vue-tsc": "^2.2.8"
+  }
+}
