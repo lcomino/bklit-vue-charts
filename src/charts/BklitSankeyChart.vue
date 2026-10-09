@@ -1,53 +1,104 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { sankey, sankeyCenter, sankeyLinkHorizontal } from "d3-sankey";
+import type { SankeyGraph, SankeyLink as LayoutLink, SankeyNode as LayoutNode } from "d3-sankey";
 
 export interface SankeyNode { id: string; name: string; color?: string }
 export interface SankeyLink { source: string; target: string; value: number; color?: string }
-const props = withDefaults(defineProps<{ nodes: SankeyNode[]; links: SankeyLink[]; height?: number; nodeWidth?: number }>(), { height: 360, nodeWidth: 14 });
-const host = ref<HTMLDivElement | null>(null); const width = ref(720); const active = ref<string | null>(null); let observer: ResizeObserver | undefined;
-onMounted(() => { if (host.value && typeof ResizeObserver !== "undefined") { observer = new ResizeObserver(([entry]) => { if (entry) width.value = Math.max(320, entry.contentRect.width); }); observer.observe(host.value); } });
-onBeforeUnmount(() => observer?.disconnect());
-const layout = computed(() => {
-  const margin = { top: 18, right: 24, bottom: 18, left: 24 };
-  const levels = new Map(props.nodes.map((node) => [node.id, 0]));
-  for (let pass = 0; pass < props.nodes.length; pass += 1) props.links.forEach((link) => { if (levels.has(link.source) && levels.has(link.target)) levels.set(link.target, Math.max(levels.get(link.target)!, levels.get(link.source)! + 1)); });
-  const maxLevel = Math.max(0, ...levels.values());
-  const columns = Array.from({ length: maxLevel + 1 }, (_, level) => props.nodes.filter((node) => levels.get(node.id) === level));
-  const plotHeight = props.height - margin.top - margin.bottom;
-  const gap = 14;
-  const incoming = new Map<string, number>(); const outgoing = new Map<string, number>();
-  props.links.forEach((link) => { outgoing.set(link.source, (outgoing.get(link.source) ?? 0) + link.value); incoming.set(link.target, (incoming.get(link.target) ?? 0) + link.value); });
-  const flowOf = (node: SankeyNode) => Math.max(incoming.get(node.id) ?? 0, outgoing.get(node.id) ?? 0, 1);
-  const columnTotals = columns.map((nodes) => nodes.reduce((sum, node) => sum + flowOf(node), 0));
-  const maxFlow = Math.max(1, ...columnTotals);
-  const scale = (plotHeight - gap * Math.max(0, ...columns.map((nodes) => nodes.length - 1))) / maxFlow;
-  const nodeHeight = (node: SankeyNode) => Math.max(6, flowOf(node) * scale);
-  const nodeMap = new Map<string, { node: SankeyNode; x: number; y: number; width: number; height: number; level: number }>();
-  columns.forEach((nodes, level) => {
-    const totalHeight = nodes.reduce((sum, node) => sum + nodeHeight(node), 0) + Math.max(0, nodes.length - 1) * gap;
-    let top = margin.top + Math.max(0, (plotHeight - totalHeight) / 2);
-    nodes.forEach((node) => { const height = nodeHeight(node); nodeMap.set(node.id, { node, x: margin.left + level * ((width.value - margin.left - margin.right - props.nodeWidth) / Math.max(1, maxLevel)), y: top, width: props.nodeWidth, height, level }); top += height + gap; });
-  });
-  const sourceUsed = new Map<string, number>(); const targetUsed = new Map<string, number>();
-  const links = props.links.flatMap((link, index) => {
-    const source = nodeMap.get(link.source); const target = nodeMap.get(link.target); if (!source || !target) return [];
-    const thickness = Math.max(2, link.value * scale);
-    const sourceOffset = sourceUsed.get(link.source) ?? 0; const targetOffset = targetUsed.get(link.target) ?? 0;
-    sourceUsed.set(link.source, sourceOffset + thickness); targetUsed.set(link.target, targetOffset + thickness);
-    const sy = source.y + sourceOffset + thickness / 2; const ty = target.y + targetOffset + thickness / 2; const sx = source.x + source.width; const tx = target.x; const curve = Math.max(20, (tx - sx) * .48);
-    return [{ ...link, index, thickness, d: `M${sx},${sy} C${sx + curve},${sy} ${tx - curve},${ty} ${tx},${ty}`, sourceNode: source, targetNode: target }];
-  });
-  return { nodes: [...nodeMap.values()], links };
+type LayoutNodeData = SankeyNode & { index?: number; x0?: number; x1?: number; y0?: number; y1?: number; value?: number };
+type LayoutLinkData = SankeyLink & { index?: number; width?: number; y0?: number; y1?: number };
+
+const props = withDefaults(defineProps<{ nodes: SankeyNode[]; links: SankeyLink[]; height?: number; nodeWidth?: number; nodePadding?: number }>(), {
+  height: 360,
+  nodeWidth: 16,
+  nodePadding: 24,
 });
+
+const host = ref<HTMLDivElement | null>(null);
+const width = ref(720);
+const activeNode = ref<string | null>(null);
+let observer: ResizeObserver | undefined;
+
+onMounted(() => {
+  if (host.value && typeof ResizeObserver !== "undefined") {
+    observer = new ResizeObserver(([entry]) => {
+      if (entry) width.value = Math.max(320, entry.contentRect.width);
+    });
+    observer.observe(host.value);
+  }
+});
+onBeforeUnmount(() => observer?.disconnect());
+
+const graph = computed<SankeyGraph<LayoutNodeData, LayoutLinkData> | null>(() => {
+  if (props.nodes.length < 2 || !props.links.length) return null;
+  const margin = { top: 28, right: 112, bottom: 28, left: 112 };
+  const plotWidth = Math.max(96, width.value - margin.left - margin.right);
+  const plotHeight = Math.max(80, props.height - margin.top - margin.bottom);
+  try {
+    const layout = sankey<LayoutNodeData, LayoutLinkData>()
+      .nodeId((node) => node.id)
+      .nodeWidth(Math.min(props.nodeWidth, Math.max(8, plotWidth / 8)))
+      .nodePadding(props.nodePadding)
+      .nodeAlign(sankeyCenter)
+      .extent([[0, 0], [plotWidth, plotHeight]]);
+    const data = layout({
+      nodes: props.nodes.map((node) => ({ ...node })),
+      links: props.links.filter((link) => link.value > 0).map((link) => ({ ...link })),
+    });
+    return {
+      nodes: data.nodes.map((node) => ({ ...node, x0: (node.x0 ?? 0) + margin.left, x1: (node.x1 ?? 0) + margin.left, y0: (node.y0 ?? 0) + margin.top, y1: (node.y1 ?? 0) + margin.top })),
+      links: data.links.map((link) => {
+        const source = link.source as LayoutNodeData;
+        const target = link.target as LayoutNodeData;
+        return { ...link, source: { ...source, x0: (source.x0 ?? 0) + margin.left, x1: (source.x1 ?? 0) + margin.left, y0: (source.y0 ?? 0) + margin.top, y1: (source.y1 ?? 0) + margin.top }, target: { ...target, x0: (target.x0 ?? 0) + margin.left, x1: (target.x1 ?? 0) + margin.left, y0: (target.y0 ?? 0) + margin.top, y1: (target.y1 ?? 0) + margin.top } };
+      }),
+    } as SankeyGraph<LayoutNodeData, LayoutLinkData>;
+  } catch {
+    // Invalid cyclic/empty input should not break the containing dashboard.
+    return null;
+  }
+});
+
+const paths = computed(() => {
+  if (!graph.value) return [];
+  const path = sankeyLinkHorizontal<LayoutNodeData, LayoutLinkData>();
+  return graph.value.links.flatMap((link, index) => {
+    const d = path(link as LayoutLink<LayoutNodeData, LayoutLinkData>) ?? "";
+    const source = link.source as LayoutNodeData;
+    const target = link.target as LayoutNodeData;
+    if (!d) return [];
+    return [{ ...link, index, d, sourceId: source.id, targetId: target.id, sourceX: source.x1 ?? 0, targetX: target.x0 ?? 0, sourceColor: link.color ?? source.color ?? "#7355e8", targetColor: link.color ?? target.color ?? source.color ?? "#7355e8" }];
+  });
+});
+
+const nodes = computed(() => graph.value?.nodes.map((node) => {
+  const x0 = node.x0 ?? 0;
+  const x1 = node.x1 ?? x0 + props.nodeWidth;
+  const y0 = node.y0 ?? 0;
+  const y1 = node.y1 ?? y0 + 1;
+  const leftSide = (x0 + x1) / 2 < width.value / 2;
+  return { ...node, x0, x1, y0, y1, centerY: (y0 + y1) / 2, leftSide };
+}) ?? []);
+
+function linkIsMuted(link: { sourceId: string; targetId: string }) {
+  return activeNode.value !== null && link.sourceId !== activeNode.value && link.targetId !== activeNode.value;
+}
 </script>
 
 <template>
   <div ref="host" class="bklit-chart bklit-sankey-wrap" :style="{ height: `${height}px` }">
-    <svg class="bklit-sankey-svg" :viewBox="`0 0 ${width} ${height}`" role="img" aria-label="Diagrama Sankey" @pointerleave="active = null">
-      <path v-for="link in layout.links" :key="link.index" :d="link.d" fill="none" :stroke="link.color ?? link.sourceNode.node.color ?? '#7355e8'" :stroke-width="link.thickness" stroke-linecap="round" :stroke-opacity="active && active !== link.source && active !== link.target ? .12 : active ? .65 : .3" class="bklit-sankey-link" @pointerenter="active = link.source" />
-      <g v-for="item in layout.nodes" :key="item.node.id" class="bklit-sankey-node" @pointerenter="active = item.node.id">
-        <rect :x="item.x" :y="item.y" :width="item.width" :height="item.height" rx="4" :fill="item.node.color ?? '#7355e8'" />
-        <text :x="item.level === 0 ? item.x - 8 : item.x + item.width + 8" :y="item.y + item.height / 2 + 4" :text-anchor="item.level === 0 ? 'end' : 'start'">{{ item.node.name }}</text>
+    <svg class="bklit-sankey-svg" :viewBox="`0 0 ${width} ${height}`" role="img" aria-label="Diagrama Sankey" @pointerleave="activeNode = null">
+      <defs>
+        <linearGradient v-for="link in paths" :id="`bklit-sankey-gradient-${link.index}`" :key="`gradient-${link.index}`" gradientUnits="userSpaceOnUse" :x1="link.sourceX" :x2="link.targetX" y1="0" y2="0">
+          <stop offset="0%" :stop-color="link.sourceColor" stop-opacity=".52" />
+          <stop offset="100%" :stop-color="link.targetColor" stop-opacity=".24" />
+        </linearGradient>
+      </defs>
+      <path v-for="link in paths" :key="link.index" :d="link.d" fill="none" :stroke="`url(#bklit-sankey-gradient-${link.index})`" :stroke-width="Math.max(1, link.width ?? 1)" class="bklit-sankey-link" :class="{ 'is-muted': linkIsMuted(link), 'is-active': activeNode === link.sourceId || activeNode === link.targetId }" @pointerenter="activeNode = link.sourceId" />
+      <g v-for="node in nodes" :key="node.id" class="bklit-sankey-node" :class="{ 'is-muted': activeNode !== null && activeNode !== node.id }" @pointerenter="activeNode = node.id">
+        <rect :x="node.x0" :y="node.y0" :width="node.x1 - node.x0" :height="Math.max(1, node.y1 - node.y0)" rx="4" :fill="node.color ?? '#7355e8'" />
+        <text :x="node.leftSide ? node.x0 - 12 : node.x1 + 12" :y="node.centerY" :text-anchor="node.leftSide ? 'end' : 'start'" dominant-baseline="middle" class="bklit-sankey-label">{{ node.name }}</text>
+        <text :x="node.leftSide ? node.x0 - 12 : node.x1 + 12" :y="node.centerY + 15" :text-anchor="node.leftSide ? 'end' : 'start'" dominant-baseline="middle" class="bklit-sankey-value">{{ Math.round(node.value ?? 0).toLocaleString() }}</text>
       </g>
     </svg>
   </div>
