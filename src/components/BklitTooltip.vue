@@ -18,9 +18,20 @@ const panel = ref<HTMLDivElement | null>(null);
 const panelSize = ref({ width: 220, height: 64 });
 let observer: ResizeObserver | undefined;
 const left = computed(() => {
-  const { width } = panelSize.value;
-  const offset = props.x + width + 16 > props.containerWidth ? -width - 14 : 14;
-  return Math.max(8, Math.min(props.containerWidth - width - 8, props.x + offset));
+  const margin = 8;
+  const gap = 14;
+  const width = Math.min(panelSize.value.width, Math.max(0, props.containerWidth - margin * 2));
+  const rightSpace = props.containerWidth - margin - (props.x + gap);
+  const leftSpace = props.x - gap - margin;
+  const preferred = rightSpace >= width
+    ? props.x + gap
+    : leftSpace >= width
+      ? props.x - width - gap
+      : rightSpace >= leftSpace
+        ? props.x + gap
+        : props.x - width - gap;
+  const maxLeft = Math.max(margin, props.containerWidth - width - margin);
+  return Math.max(margin, Math.min(maxLeft, preferred));
 });
 const top = computed(() => Math.max(8, Math.min(props.containerHeight - panelSize.value.height - 8, props.y - panelSize.value.height / 2)));
 

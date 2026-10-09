@@ -135,8 +135,9 @@
   position: absolute;
   z-index: 5;
   width: max-content;
-  min-width: 210px;
+  min-width: min(210px, calc(100% - 16px));
   max-width: min(280px, calc(100% - 16px));
+  box-sizing: border-box;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, .11);
   border-radius: 12px;
