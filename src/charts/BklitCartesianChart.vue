@@ -14,6 +14,7 @@ const props = withDefaults(defineProps<{
   axes?: ChartAxis[];
   height?: number;
   stacked?: boolean;
+  showTotal?: boolean;
   showLegend?: boolean;
   formatValue?: (value: number) => string;
   ariaLabel?: string;
@@ -22,6 +23,7 @@ const props = withDefaults(defineProps<{
   axes: () => [{ id: "primary", side: "left" }],
   height: 320,
   stacked: false,
+  showTotal: true,
   showLegend: true,
   formatValue: (value: number) => value.toLocaleString(),
   ariaLabel: "Gráfico",
@@ -116,11 +118,19 @@ const yScales = computed(() => {
     const axisValues = matching.flatMap((series) => series.data.map((point) => point.value));
     let low = axis.min ?? Math.min(0, min(axisValues) ?? 0);
     let high = axis.max ?? (max(axisValues) ?? 1);
-    if (props.stacked && matching.some((series) => (series.kind ?? props.kind) === "bar")) {
-      const sums = labels.value.map((label) => matching
-        .filter((series) => (series.kind ?? props.kind) === "bar")
-        .reduce((total, series) => total + (series.data.find((point) => point.label === label)?.value ?? 0), 0));
-      high = axis.max ?? Math.max(high, max(sums) ?? 1);
+    if (props.stacked) {
+      if (matching.some((series) => seriesKind(series) === "bar")) {
+        const barSeries = matching.filter((series) => seriesKind(series) === "bar");
+        const positiveSums = labels.value.map((label) => barSeries.reduce((total, series) => total + Math.max(0, series.data.find((point) => point.label === label)?.value ?? 0), 0));
+        const negativeSums = labels.value.map((label) => barSeries.reduce((total, series) => total + Math.min(0, series.data.find((point) => point.label === label)?.value ?? 0), 0));
+        high = axis.max ?? Math.max(high, max(positiveSums) ?? 1);
+        low = axis.min ?? Math.min(low, min(negativeSums) ?? 0);
+      }
+      if (matching.some((series) => seriesKind(series) === "area")) {
+        const areaSeries = matching.filter((series) => seriesKind(series) === "area");
+        const sums = labels.value.map((label) => areaSeries.reduce((total, series) => total + (series.data.find((point) => point.label === label)?.value ?? 0), 0));
+        high = axis.max ?? Math.max(high, max(sums) ?? 1);
+      }
     }
     if (high <= low) high = low + 1;
     result.set(axis.id, scaleLinear<number, number>().domain([low, high]).nice().range([plotBottom.value, plot.value.top]));
@@ -149,11 +159,26 @@ function seriesColor(series: ChartSeries) {
 function yFor(series: ChartSeries, value: number) {
   return yScales.value.get(series.axisId ?? "primary")?.(value) ?? plotBottom.value;
 }
+function stackedBase(series: ChartSeries, label: string) {
+  const kind = seriesKind(series);
+  if (!props.stacked || (kind !== "bar" && kind !== "area")) return 0;
+  const peers = visibleSeries.value.filter((item) => seriesKind(item) === kind && (item.axisId ?? "primary") === (series.axisId ?? "primary"));
+  const index = peers.findIndex((item) => item.id === series.id);
+  return peers.slice(0, index).reduce((total, item) => {
+    const value = item.data.find((point) => point.label === label)?.value ?? 0;
+    if (kind === "bar") {
+      const current = series.data.find((point) => point.label === label)?.value ?? 0;
+      if (Math.sign(value) !== Math.sign(current)) return total;
+    }
+    return total + value;
+  }, 0);
+}
 function linePath(series: ChartSeries) {
+  const stacked = seriesKind(series) === "area" && props.stacked;
   const generator = d3Line<ChartPoint>()
     .defined((point) => Number.isFinite(point.value) && xScale.value(point.label) !== undefined)
     .x((point) => xScale.value(point.label) ?? 0)
-    .y((point) => yFor(series, point.value))
+    .y((point) => yFor(series, point.value + (stacked ? stackedBase(series, point.label) : 0)))
     .curve(curveMonotoneX);
   return generator(series.data) ?? "";
 }
@@ -161,8 +186,8 @@ function areaPath(series: ChartSeries) {
   const generator = d3Area<ChartPoint>()
     .defined((point) => Number.isFinite(point.value) && xScale.value(point.label) !== undefined)
     .x((point) => xScale.value(point.label) ?? 0)
-    .y0(yFor(series, 0))
-    .y1((point) => yFor(series, point.value))
+    .y0((point) => yFor(series, stackedBase(series, point.label)))
+    .y1((point) => yFor(series, point.value + stackedBase(series, point.label)))
     .curve(curveMonotoneX);
   return generator(series.data) ?? "";
 }
@@ -213,12 +238,10 @@ const bars = computed(() => {
   const slot = Math.max(12, step * 0.72);
   const barWidth = props.stacked ? slot : slot / Math.max(1, barSeries.length);
   return labels.value.flatMap((label, pointIndex) => {
-    let stackedBase = 0;
     return barSeries.map((series, seriesIndex) => {
       const point = series.data.find((item) => item.label === label);
       const value = point?.value ?? 0;
-      const base = props.stacked ? stackedBase : 0;
-      if (props.stacked) stackedBase += value;
+      const base = props.stacked ? stackedBase(series, label) : 0;
       const x = xScale.value(label) ?? 0;
       const yTop = yFor(series, base + value);
       const yBase = yFor(series, base);
@@ -255,7 +278,7 @@ const tooltipTotal = computed<number | undefined>(() => {
   if (!props.stacked || !activeLabel.value) return undefined;
   const primaryAxisId = allAxes.value.find((axis) => axis.side !== "right")?.id ?? allAxes.value[0]?.id ?? "primary";
   return visibleSeries.value
-    .filter((series) => (series.axisId ?? "primary") === primaryAxisId && seriesKind(series) === "bar")
+    .filter((series) => (series.axisId ?? "primary") === primaryAxisId && (seriesKind(series) === "bar" || seriesKind(series) === "area"))
     .reduce((sum, series) => sum + (series.data.find((point) => point.label === activeLabel.value)?.value ?? 0), 0);
 });
 function handlePointerMove(event: PointerEvent) {
@@ -347,7 +370,7 @@ function toggleSeries(id: string) {
             v-if="activeLabel && series.data.some((point) => point.label === activeLabel)"
             class="bklit-point-marker"
             :cx="xScale(activeLabel) ?? 0"
-            :cy="yFor(series, series.data.find((point) => point.label === activeLabel)?.value ?? 0)"
+            :cy="yFor(series, (series.data.find((point) => point.label === activeLabel)?.value ?? 0) + (seriesKind(series) === 'area' && stacked ? stackedBase(series, activeLabel) : 0))"
             :fill="seriesColor(series)"
           />
         </g>
@@ -381,7 +404,7 @@ function toggleSeries(id: string) {
       :container-height="chartHeight"
       :label="activeLabel ?? ''"
       :rows="tooltipRows"
-      :total="tooltipTotal"
+      :total="showTotal ? tooltipTotal : undefined"
       :format-value="formatValue"
     />
   </div>

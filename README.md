@@ -26,6 +26,14 @@ npm install
 npm run dev
 ```
 
+## Installation
+
+After this repository is public, Vue apps can install the package directly from GitHub. Git installs run the package `prepare` script, which builds the JavaScript bundle and TypeScript declarations.
+
+```sh
+npm install github:lcomino/bklit-vue-charts
+```
+
 ## Usage
 
 ```vue

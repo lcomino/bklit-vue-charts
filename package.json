@@ -1,10 +1,14 @@
 {
   "name": "bklit-vue-charts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "type": "module",
   "license": "MIT",
   "description": "An unofficial Vue 3 port of the open-source Bklit UI chart components.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lcomino/bklit-vue-charts.git"
+  },
   "files": [
     "dist",
     "LICENSE",
@@ -13,10 +17,10 @@
   ],
   "main": "./dist/bklit-vue-charts.umd.cjs",
   "module": "./dist/bklit-vue-charts.js",
-  "types": "./dist/types/index.d.ts",
+  "types": "./dist/types/src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/types/index.d.ts",
+      "types": "./dist/types/src/index.d.ts",
       "import": "./dist/bklit-vue-charts.js",
       "require": "./dist/bklit-vue-charts.umd.cjs"
     },
@@ -26,7 +30,8 @@
     "dev": "vite --host 0.0.0.0",
     "typecheck": "vue-tsc --noEmit",
     "build:types": "vue-tsc --declaration --emitDeclarationOnly --outDir dist/types",
-    "build": "npm run typecheck && npm run build:types && vite build",
+    "build": "npm run typecheck && vite build && npm run build:types",
+    "prepare": "npm run build",
     "preview": "vite preview --host 0.0.0.0"
   },
   "peerDependencies": {

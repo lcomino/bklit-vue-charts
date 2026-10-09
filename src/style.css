@@ -350,7 +350,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  .bklit-chart *,
+  .bklit-chart *::before,
+  .bklit-chart *::after,
+  .bklit-pie-wrap *,
+  .bklit-pie-wrap *::before,
+  .bklit-pie-wrap *::after,
+  .bklit-ring-wrap *,
+  .bklit-ring-wrap *::before,
+  .bklit-ring-wrap *::after {
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
