@@ -1,0 +1,4 @@
+<script setup lang="ts">
+withDefaults(defineProps<{ width: number; height: number; fill?: string; pattern?: "none" | "dots" | "diagonal"; patternColor?: string }>(), { fill: "transparent", pattern: "none", patternColor: "#e9e6eb" });
+</script>
+<template><g class="bklit-background"><defs><pattern v-if="pattern === 'dots'" :id="`bklit-bg-dots-${width}-${height}`" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" :fill="patternColor" /></pattern><pattern v-if="pattern === 'diagonal'" :id="`bklit-bg-lines-${width}-${height}`" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" :stroke="patternColor" stroke-width="2" /></pattern></defs><rect width="100%" height="100%" :fill="fill" /><rect v-if="pattern !== 'none'" width="100%" height="100%" :fill="pattern === 'dots' ? `url(#bklit-bg-dots-${width}-${height})` : `url(#bklit-bg-lines-${width}-${height})`" /></g></template>

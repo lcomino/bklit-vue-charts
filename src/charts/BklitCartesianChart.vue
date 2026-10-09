@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   stacked?: boolean;
   showTotal?: boolean;
   showLegend?: boolean;
+  xTickCount?: number;
   formatValue?: (value: number) => string;
   ariaLabel?: string;
 }>(), {
@@ -25,6 +26,7 @@ const props = withDefaults(defineProps<{
   stacked: false,
   showTotal: true,
   showLegend: true,
+  xTickCount: undefined,
   formatValue: (value: number) => value.toLocaleString(),
   ariaLabel: "Gráfico",
 });
@@ -47,6 +49,9 @@ const displayPaths = ref(new Map<string, string>());
 
 function areaGradientIdFor(series: ChartSeries) {
   return `bklit-area-gradient-${instanceId}-${series.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+function hoverClipIdFor(series: ChartSeries) {
+  return `bklit-hover-clip-${instanceId}-${series.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 function bklitEasing(time: number) {
   const coordinate = (position: number, a: number, b: number) => 3 * (1 - position) ** 2 * position * a + 3 * (1 - position) * position ** 2 * b + position ** 3;
@@ -94,6 +99,7 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   cancelAnimationFrame(revealFrame);
   cancelAnimationFrame(pathFrame);
+  cancelAnimationFrame(hoverSpringFrame);
 });
 
 const chartHeight = computed(() => props.height);
@@ -147,8 +153,52 @@ const axisTicks = computed(() => {
     label: axis.tickFormat?.(value) ?? props.formatValue(value),
   })) ?? [] : [];
 });
-const xTicks = computed(() => labels.value.map((label) => ({ label, x: xScale.value(label) ?? 0 })));
+const xTicks = computed(() => {
+  const count = props.xTickCount;
+  if (!count || count >= labels.value.length) return labels.value.map((label) => ({ label, x: xScale.value(label) ?? 0 }));
+  const step = Math.max(1, Math.ceil((labels.value.length - 1) / Math.max(1, count - 1)));
+  return labels.value.flatMap((label, index) => index === 0 || index === labels.value.length - 1 || index % step === 0 ? [{ label, x: xScale.value(label) ?? 0 }] : []);
+});
 const activeX = computed(() => activeLabel.value ? xScale.value(activeLabel.value) ?? null : null);
+const activePointIndex = computed(() => activeLabel.value === null ? -1 : labels.value.indexOf(activeLabel.value));
+const hoverBand = computed(() => {
+  if (activePointIndex.value < 0) return { x: 0, width: 0 };
+  const start = xScale.value(labels.value[Math.max(0, activePointIndex.value - 1)]!) ?? 0;
+  const end = xScale.value(labels.value[Math.min(labels.value.length - 1, activePointIndex.value + 1)]!) ?? start;
+  return { x: start, width: Math.max(0, end - start) };
+});
+const springHoverBand = ref({ x: 0, width: 0 });
+let hoverSpringFrame = 0;
+let hasHoveredBand = false;
+watch(hoverBand, (target) => {
+  cancelAnimationFrame(hoverSpringFrame);
+  if (!activeLabel.value) { hasHoveredBand = false; return; }
+  if (!hasHoveredBand || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    springHoverBand.value = target;
+    hasHoveredBand = true;
+    return;
+  }
+  let previousTime = performance.now();
+  let velocityX = 0;
+  let velocityWidth = 0;
+  const tick = (now: number) => {
+    const dt = Math.min(.032, Math.max(.001, (now - previousTime) / 1000));
+    previousTime = now;
+    const spring = (value: number, velocity: number, destination: number) => {
+      velocity += (destination - value) * 250 * dt;
+      velocity *= Math.exp(-24 * dt);
+      return { value: value + velocity * dt, velocity };
+    };
+    const x = spring(springHoverBand.value.x, velocityX, target.x);
+    const width = spring(springHoverBand.value.width, velocityWidth, target.width);
+    velocityX = x.velocity;
+    velocityWidth = width.velocity;
+    springHoverBand.value = { x: x.value, width: width.value };
+    if (Math.abs(target.x - x.value) > .2 || Math.abs(target.width - width.value) > .2 || Math.abs(velocityX) > .2 || Math.abs(velocityWidth) > .2) hoverSpringFrame = requestAnimationFrame(tick);
+    else springHoverBand.value = target;
+  };
+  hoverSpringFrame = requestAnimationFrame(tick);
+});
 
 function seriesKind(series: ChartSeries): CartesianKind {
   return series.kind ?? (props.kind === "composed" ? "line" : props.kind);
@@ -342,6 +392,11 @@ function toggleSeries(id: string) {
             <stop offset="100%" :stop-color="seriesColor(series)" stop-opacity="0" />
           </linearGradient>
         </template>
+        <template v-for="series in visibleSeries.filter((item) => seriesKind(item) !== 'bar')" :key="`hover-${series.id}`">
+          <clipPath :id="hoverClipIdFor(series)">
+            <rect :x="springHoverBand.x" y="0" :width="springHoverBand.width" :height="chartHeight" />
+          </clipPath>
+        </template>
       </defs>
       <g class="bklit-grid">
         <g v-for="tick in axisTicks" :key="tick.value">
@@ -384,6 +439,13 @@ function toggleSeries(id: string) {
         <g v-for="series in visibleSeries.filter((item) => seriesKind(item) !== 'bar')" :key="series.id" class="bklit-series-item" :class="{ 'is-muted': activeSeriesId !== null && activeSeriesId !== series.id }">
           <path v-if="seriesKind(series) === 'area'" class="bklit-area-path" :d="displayPaths.get(`${series.id}:area`) ?? areaPath(series)" :fill="`url(#${areaGradientIdFor(series)})`" />
           <path class="bklit-line-path" :d="displayPaths.get(`${series.id}:line`) ?? linePath(series)" :stroke="seriesColor(series)" />
+          <path
+            v-if="activeLabel && activeSeriesId === series.id"
+            class="bklit-line-hover-highlight"
+            :d="displayPaths.get(`${series.id}:line`) ?? linePath(series)"
+            :stroke="seriesColor(series)"
+            :clip-path="`url(#${hoverClipIdFor(series)})`"
+          />
           <circle
             v-if="activeLabel && activeSeriesId === series.id && series.data.some((point) => point.label === activeLabel)"
             class="bklit-point-marker"
