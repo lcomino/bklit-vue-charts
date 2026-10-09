@@ -13,7 +13,7 @@ This is a standalone project so it can later be consumed by Fillrate without cou
 | Bar chart | Preview |
 | Composed chart | Preview |
 | Pie chart | Preview |
-| Ring / donut chart | Planned |
+| Ring / donut chart | Preview |
 | Candlestick, funnel, gauge, radar, scatter, Sankey, heatmap, choropleth, sunburst | Planned |
 | Brush, live chart, markers, reference areas, legends, tooltip/date ticker primitives | In progress |
 
