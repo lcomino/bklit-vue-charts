@@ -10,6 +10,7 @@ const props = withDefaults(defineProps<{
   outerRadius: number;
   color: string;
   index: number;
+  initialAnimation?: boolean;
   active: boolean;
   dimmed: boolean;
   hoverOffset: number;
@@ -75,9 +76,13 @@ onMounted(() => {
   drawnStart.value = start;
   drawnEnd.value = start;
   ready.value = true;
-  delayTimer = window.setTimeout(() => {
-    animateAngles(start, start, props.startAngle, props.endAngle, 820);
-  }, props.index * 70);
+  if (props.initialAnimation) {
+    delayTimer = window.setTimeout(() => {
+      animateAngles(start, start, props.startAngle, props.endAngle, 820);
+    }, props.index * 70);
+  } else {
+    animateAngles(start, start, props.startAngle, props.endAngle, 360);
+  }
 });
 
 watch(() => [props.startAngle, props.endAngle] as const, ([start, end]) => {

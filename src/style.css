@@ -55,6 +55,14 @@
   vector-effect: non-scaling-stroke;
 }
 
+.bklit-series-item {
+  transition: opacity 140ms ease;
+}
+
+.bklit-series-item.is-muted {
+  opacity: .22;
+}
+
 .bklit-area-path {
   opacity: .16;
   transition: opacity 180ms ease;

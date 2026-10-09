@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { pie as d3Pie } from "d3-shape";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import BklitRollingNumber from "../components/BklitRollingNumber.vue";
 import BklitPieSlice from "./BklitPieSlice.vue";
 import { chartPalette, type PieDatum } from "../types";
@@ -35,12 +35,14 @@ const props = withDefaults(defineProps<{
 });
 
 const activeId = ref<string | null>(null);
+const initialAnimationPending = ref(true);
 let clearHoverTimer = 0;
 function setActive(label: string | null) {
   window.clearTimeout(clearHoverTimer);
   if (label !== null) activeId.value = label;
   else clearHoverTimer = window.setTimeout(() => { activeId.value = null; }, 55);
 }
+onMounted(() => { initialAnimationPending.value = false; });
 onBeforeUnmount(() => window.clearTimeout(clearHoverTimer));
 const visibleIds = ref(new Set(props.data.map((item) => item.label)));
 watch(() => props.data.map((item) => item.label), (labels, previousLabels) => {
@@ -99,6 +101,7 @@ function toggle(label: string) {
           :outer-radius="radius"
           :color="slice.color"
           :index="slice.index"
+          :initial-animation="initialAnimationPending"
           :active="activeId === slice.datum.data.label"
           :dimmed="activeId !== null && activeId !== slice.datum.data.label"
           :hover-offset="hoverOffset"

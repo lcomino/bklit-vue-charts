@@ -31,8 +31,10 @@ const props = withDefaults(defineProps<{
 
 const host = ref<HTMLDivElement | null>(null);
 const width = ref(720);
+const hostSize = ref({ width: 720, height: props.height });
 const revealProgress = ref(0);
 const activeLabel = ref<string | null>(null);
+const activeSeriesId = ref<string | null>(null);
 const mouse = ref({ x: 0, y: 0 });
 const visibleIds = ref(new Set(props.series.map((series) => series.id)));
 const instanceId = getCurrentInstance()?.uid ?? 0;
@@ -46,10 +48,6 @@ const displayPaths = ref(new Map<string, string>());
 function areaGradientIdFor(series: ChartSeries) {
   return `bklit-area-gradient-${instanceId}-${series.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
-function lineGradientIdFor(series: ChartSeries) {
-  return `bklit-line-gradient-${instanceId}-${series.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-}
-
 function bklitEasing(time: number) {
   const coordinate = (position: number, a: number, b: number) => 3 * (1 - position) ** 2 * position * a + 3 * (1 - position) * position ** 2 * b + position ** 3;
   let low = 0;
@@ -73,7 +71,10 @@ watch(() => props.series.map(({ id }) => id), (ids, previousIds) => {
 onMounted(() => {
   if (host.value && typeof ResizeObserver !== "undefined") {
     resizeObserver = new ResizeObserver(([entry]) => {
-      if (entry) width.value = Math.max(320, entry.contentRect.width);
+      if (entry) {
+        hostSize.value = { width: entry.contentRect.width, height: entry.contentRect.height };
+        width.value = Math.max(320, entry.contentRect.width);
+      }
     });
     resizeObserver.observe(host.value);
   }
@@ -285,15 +286,40 @@ function handlePointerMove(event: PointerEvent) {
   if (!host.value || !labels.value.length) return;
   const bounds = host.value.getBoundingClientRect();
   const localX = event.clientX - bounds.left;
+  const localY = event.clientY - bounds.top;
+  const chartX = localX * width.value / Math.max(1, bounds.width);
+  const chartY = localY * chartHeight.value / Math.max(1, bounds.height);
+  if (chartX < plot.value.left || chartX > plotRight.value || chartY < plot.value.top || chartY > plotBottom.value) {
+    activeLabel.value = null;
+    activeSeriesId.value = null;
+    return;
+  }
   const nearest = labels.value.reduce((best, label) => {
-    const distance = Math.abs((xScale.value(label) ?? 0) - localX);
+    const distance = Math.abs((xScale.value(label) ?? 0) - chartX);
     return distance < best.distance ? { label, distance } : best;
   }, { label: labels.value[0], distance: Infinity });
   activeLabel.value = nearest.label;
-  mouse.value = {
-    x: xScale.value(nearest.label) ?? localX,
-    y: Math.max(plot.value.top, Math.min(plotBottom.value, event.clientY - bounds.top)),
-  };
+  const activeBars = bars.value.filter((bar) => bar.key.endsWith(`:${nearest.label}`));
+  const candidates = visibleSeries.value.map((series) => {
+    const kind = seriesKind(series);
+    const point = series.data.find((item) => item.label === nearest.label);
+    if (!point) return { id: series.id, distance: Infinity };
+    if (kind === "bar") {
+      const bar = activeBars.find((item) => item.series.id === series.id);
+      if (!bar) return { id: series.id, distance: Infinity };
+      const horizontal = Math.max(bar.x - chartX, 0, chartX - (bar.x + bar.width));
+      const vertical = Math.max(bar.y - chartY, 0, chartY - (bar.y + bar.height));
+      return { id: series.id, distance: Math.hypot(horizontal, vertical) };
+    }
+    const value = point.value + (kind === "area" && props.stacked ? stackedBase(series, nearest.label) : 0);
+    return { id: series.id, distance: Math.abs(yFor(series, value) - chartY) };
+  });
+  activeSeriesId.value = candidates.reduce((best, item) => item.distance < best.distance ? item : best, { id: null as string | null, distance: Infinity }).id;
+  mouse.value = { x: localX, y: localY };
+}
+function handlePointerLeave() {
+  activeLabel.value = null;
+  activeSeriesId.value = null;
 }
 function toggleSeries(id: string) {
   const next = new Set(visibleIds.value);
@@ -305,7 +331,7 @@ function toggleSeries(id: string) {
 
 <template>
   <div ref="host" class="bklit-chart" :style="{ height: `${chartHeight}px` }">
-    <svg class="bklit-chart-svg" :viewBox="`0 0 ${width} ${chartHeight}`" :aria-label="ariaLabel" role="img" @pointermove="handlePointerMove" @pointerleave="activeLabel = null">
+    <svg class="bklit-chart-svg" :viewBox="`0 0 ${width} ${chartHeight}`" :aria-label="ariaLabel" role="img" @pointermove="handlePointerMove" @pointerleave="handlePointerLeave">
       <defs>
         <clipPath :id="seriesClipId">
           <rect :x="plot.left" y="0" :width="(plotRight - plot.left) * revealProgress" :height="chartHeight" />
@@ -313,14 +339,6 @@ function toggleSeries(id: string) {
         <template v-for="series in props.series.filter((item) => seriesKind(item) === 'area')" :key="series.id">
           <linearGradient :id="areaGradientIdFor(series)" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" :stop-color="seriesColor(series)" stop-opacity=".28" />
-            <stop offset="100%" :stop-color="seriesColor(series)" stop-opacity="0" />
-          </linearGradient>
-        </template>
-        <template v-for="series in props.series.filter((item) => seriesKind(item) !== 'bar')" :key="`line-${series.id}`">
-          <linearGradient :id="lineGradientIdFor(series)" x1="0" x2="1" y1="0" y2="0" gradientUnits="objectBoundingBox">
-            <stop offset="0%" :stop-color="seriesColor(series)" stop-opacity="0" />
-            <stop offset="12%" :stop-color="seriesColor(series)" stop-opacity="1" />
-            <stop offset="88%" :stop-color="seriesColor(series)" stop-opacity="1" />
             <stop offset="100%" :stop-color="seriesColor(series)" stop-opacity="0" />
           </linearGradient>
         </template>
@@ -351,7 +369,7 @@ function toggleSeries(id: string) {
       </g>
 
       <g class="bklit-series" :clip-path="`url(#${seriesClipId})`">
-        <g v-for="bar in bars" :key="bar.key" class="bklit-bar-series">
+        <g v-for="bar in bars" :key="bar.key" class="bklit-bar-series bklit-series-item" :class="{ 'is-muted': activeSeriesId !== null && activeSeriesId !== bar.series.id }">
           <BklitAnimatedBar
             :x="bar.x"
             :y="bar.y"
@@ -363,11 +381,11 @@ function toggleSeries(id: string) {
             :animate-updates="revealProgress >= 1"
           />
         </g>
-        <g v-for="series in visibleSeries.filter((item) => seriesKind(item) !== 'bar')" :key="series.id">
+        <g v-for="series in visibleSeries.filter((item) => seriesKind(item) !== 'bar')" :key="series.id" class="bklit-series-item" :class="{ 'is-muted': activeSeriesId !== null && activeSeriesId !== series.id }">
           <path v-if="seriesKind(series) === 'area'" class="bklit-area-path" :d="displayPaths.get(`${series.id}:area`) ?? areaPath(series)" :fill="`url(#${areaGradientIdFor(series)})`" />
-          <path class="bklit-line-path" :d="displayPaths.get(`${series.id}:line`) ?? linePath(series)" :stroke="`url(#${lineGradientIdFor(series)})`" />
+          <path class="bklit-line-path" :d="displayPaths.get(`${series.id}:line`) ?? linePath(series)" :stroke="seriesColor(series)" />
           <circle
-            v-if="activeLabel && series.data.some((point) => point.label === activeLabel)"
+            v-if="activeLabel && activeSeriesId === series.id && series.data.some((point) => point.label === activeLabel)"
             class="bklit-point-marker"
             :cx="xScale(activeLabel) ?? 0"
             :cy="yFor(series, (series.data.find((point) => point.label === activeLabel)?.value ?? 0) + (seriesKind(series) === 'area' && stacked ? stackedBase(series, activeLabel) : 0))"
@@ -400,8 +418,8 @@ function toggleSeries(id: string) {
       :open="activeLabel !== null && tooltipRows.length > 0"
       :x="mouse.x"
       :y="mouse.y"
-      :container-width="width"
-      :container-height="chartHeight"
+      :container-width="hostSize.width"
+      :container-height="hostSize.height"
       :label="activeLabel ?? ''"
       :rows="tooltipRows"
       :total="showTotal ? tooltipTotal : undefined"
