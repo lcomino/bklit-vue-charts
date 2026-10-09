@@ -49,12 +49,10 @@
 
 .bklit-line-path {
   fill: none;
-  stroke-width: 2;
+  stroke-width: 1.75;
   stroke-linecap: round;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
-  pathLength: 1;
-  animation: bklit-line-reveal 720ms cubic-bezier(.2,.8,.2,1) both;
 }
 
 .bklit-area-path {
@@ -63,6 +61,10 @@
 }
 
 .bklit-bar-series rect {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: bklit-bar-grow 680ms cubic-bezier(.2,.8,.2,1) both;
+  animation-delay: var(--bar-delay, 0ms);
   transition: opacity 160ms ease;
 }
 
@@ -144,20 +146,20 @@
   box-shadow: 0 16px 42px rgba(18, 13, 24, .24);
   backdrop-filter: blur(16px);
   pointer-events: none;
-  transform: translateY(-100%);
-  transition: left 120ms cubic-bezier(.2,.8,.2,1), top 120ms cubic-bezier(.2,.8,.2,1);
+  transform-origin: center;
+  transition: left 90ms cubic-bezier(.22,1,.36,1), top 90ms cubic-bezier(.22,1,.36,1);
   font-family: var(--bklit-font);
 }
 
 .bklit-tooltip-enter-active,
 .bklit-tooltip-leave-active {
-  transition: opacity 140ms ease, transform 180ms cubic-bezier(.2,.8,.2,1);
+  transition: opacity 130ms ease, transform 180ms cubic-bezier(.22,1,.36,1);
 }
 
 .bklit-tooltip-enter-from,
 .bklit-tooltip-leave-to {
   opacity: 0;
-  transform: translateY(calc(-100% + 5px)) scale(.97);
+  transform: scale(.97);
 }
 
 .bklit-tooltip-date {
@@ -166,14 +168,6 @@
   font-size: 11px;
   font-weight: 500;
 }
-
-.bklit-date-enter-active,
-.bklit-date-leave-active {
-  transition: opacity 110ms ease, transform 150ms cubic-bezier(.2,.8,.2,1);
-}
-
-.bklit-date-enter-from { opacity: 0; transform: translateY(5px); }
-.bklit-date-leave-to { opacity: 0; transform: translateY(-4px); }
 
 .bklit-tooltip-row,
 .bklit-tooltip-total {
@@ -252,7 +246,24 @@
 .bklit-pie-slice {
   stroke: white;
   stroke-width: 2px;
-  transition: opacity 160ms ease, d 160ms ease;
+  transition: opacity 160ms ease, filter 180ms ease;
+  cursor: pointer;
+}
+
+.bklit-pie-slice-group {
+  transition: opacity 150ms ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.bklit-ring-layer {
+  transition: opacity 150ms ease;
+  transform-origin: 0 0;
+  cursor: pointer;
+  pointer-events: none;
+}
+
+.bklit-ring-hitbox {
   cursor: pointer;
 }
 
@@ -285,14 +296,57 @@
   font-variant-numeric: tabular-nums;
 }
 
+.bklit-ring-wrap {
+  position: relative;
+  max-width: 100%;
+  margin: 0 auto;
+  color: var(--bklit-ink);
+  font-family: var(--bklit-font);
+}
+
+.bklit-ring-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.bklit-ring-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  text-align: center;
+}
+
+.bklit-pie-label-enter-active,
+.bklit-pie-label-leave-active {
+  transition: opacity 120ms ease, transform 160ms cubic-bezier(.22,1,.36,1);
+}
+
+.bklit-pie-label-enter-from { opacity: 0; transform: translateY(4px); }
+.bklit-pie-label-leave-to { opacity: 0; transform: translateY(-4px); }
+.bklit-pie-label-leave-active { position: absolute; }
+
+.bklit-rolling-number {
+  display: inline-block;
+  min-width: 1ch;
+  font-variant-numeric: tabular-nums;
+}
+
 .bklit-pie-legend {
   justify-content: center;
   padding-top: 4px;
 }
 
-@keyframes bklit-line-reveal {
-  from { stroke-dasharray: 1; stroke-dashoffset: 1; }
-  to { stroke-dasharray: 1; stroke-dashoffset: 0; }
+@keyframes bklit-bar-grow {
+  from { transform: scaleY(.02); opacity: .35; }
+  to { transform: scaleY(1); opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -10,4 +10,4 @@ export { default as BklitRingChart } from "./charts/BklitRingChart.vue";
 export { default as BklitRollingNumber } from "./components/BklitRollingNumber.vue";
 export { default as BklitTooltip } from "./components/BklitTooltip.vue";
 export { chartPalette } from "./types";
-export type { AxisSide, CartesianChartKind, CartesianKind, ChartAxis, ChartPoint, ChartSeries, PieDatum, TooltipRow } from "./types";
+export type { AxisSide, CartesianChartKind, CartesianKind, ChartAxis, ChartPoint, ChartSeries, PieDatum, RingDatum, TooltipRow } from "./types";

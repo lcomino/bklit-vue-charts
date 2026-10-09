@@ -6,14 +6,21 @@ const props = withDefaults(defineProps<{
   value: number;
   formatValue?: (value: number) => string;
   duration?: number;
+  animateOnMount?: boolean;
 }>(), {
   formatValue: (value: number) => Math.round(value).toLocaleString(),
-  duration: 260,
+  duration: 420,
+  animateOnMount: false,
 });
 
-const display = useAnimatedNumber(toRef(props, "value"), (value) => props.formatValue(value), props.duration);
+const display = useAnimatedNumber(
+  toRef(props, "value"),
+  (value) => props.formatValue(value),
+  props.duration,
+  props.animateOnMount,
+);
 </script>
 
 <template>
-  <span class="bklit-rolling-number" aria-live="polite" aria-atomic="true">{{ display }}</span>
+  <span class="bklit-rolling-number">{{ display }}</span>
 </template>

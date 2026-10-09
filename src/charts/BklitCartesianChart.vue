@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { area as d3Area, curveMonotoneX, line as d3Line } from "d3-shape";
 import { max, min } from "d3-array";
+import { interpolateString } from "d3-interpolate";
 import { scaleLinear, scalePoint, type ScaleLinear } from "d3-scale";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, getCurrentInstance, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import BklitTooltip from "../components/BklitTooltip.vue";
+import BklitAnimatedBar from "./BklitAnimatedBar.vue";
 import { chartPalette, type CartesianChartKind, type CartesianKind, type ChartAxis, type ChartPoint, type ChartSeries, type TooltipRow } from "../types";
 
 const props = withDefaults(defineProps<{
@@ -27,25 +29,69 @@ const props = withDefaults(defineProps<{
 
 const host = ref<HTMLDivElement | null>(null);
 const width = ref(720);
+const revealProgress = ref(0);
 const activeLabel = ref<string | null>(null);
 const mouse = ref({ x: 0, y: 0 });
 const visibleIds = ref(new Set(props.series.map((series) => series.id)));
+const instanceId = getCurrentInstance()?.uid ?? 0;
+const seriesClipId = `bklit-series-clip-${instanceId}`;
 let resizeObserver: ResizeObserver | undefined;
+let revealFrame = 0;
+let pathFrame = 0;
+let pathsReady = false;
+const displayPaths = ref(new Map<string, string>());
 
-watch(() => props.series.map(({ id }) => id).join("|"), () => {
-  const available = new Set(props.series.map((series) => series.id));
-  visibleIds.value = new Set([...visibleIds.value].filter((id) => available.has(id)));
-  props.series.forEach(({ id }) => visibleIds.value.add(id));
+function areaGradientIdFor(series: ChartSeries) {
+  return `bklit-area-gradient-${instanceId}-${series.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+function lineGradientIdFor(series: ChartSeries) {
+  return `bklit-line-gradient-${instanceId}-${series.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+function bklitEasing(time: number) {
+  const coordinate = (position: number, a: number, b: number) => 3 * (1 - position) ** 2 * position * a + 3 * (1 - position) * position ** 2 * b + position ** 3;
+  let low = 0;
+  let high = 1;
+  for (let i = 0; i < 12; i += 1) {
+    const mid = (low + high) / 2;
+    if (coordinate(mid, 0.85, 0.15) < time) low = mid;
+    else high = mid;
+  }
+  return coordinate((low + high) / 2, 0, 1);
+}
+
+watch(() => props.series.map(({ id }) => id), (ids, previousIds) => {
+  const available = new Set(ids);
+  const previous = new Set(previousIds);
+  const next = new Set([...visibleIds.value].filter((id) => available.has(id)));
+  ids.forEach((id) => { if (!previous.has(id)) next.add(id); });
+  visibleIds.value = next;
 });
 
 onMounted(() => {
-  if (!host.value || typeof ResizeObserver === "undefined") return;
-  resizeObserver = new ResizeObserver(([entry]) => {
-    if (entry) width.value = Math.max(320, entry.contentRect.width);
-  });
-  resizeObserver.observe(host.value);
+  if (host.value && typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver(([entry]) => {
+      if (entry) width.value = Math.max(320, entry.contentRect.width);
+    });
+    resizeObserver.observe(host.value);
+  }
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    revealProgress.value = 1;
+    return;
+  }
+  const start = performance.now();
+  const reveal = (time: number) => {
+    const progress = Math.min(1, (time - start) / 1100);
+    revealProgress.value = bklitEasing(progress);
+    if (progress < 1) revealFrame = requestAnimationFrame(reveal);
+  };
+  revealFrame = requestAnimationFrame(reveal);
 });
-onBeforeUnmount(() => resizeObserver?.disconnect());
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  cancelAnimationFrame(revealFrame);
+  cancelAnimationFrame(pathFrame);
+});
 
 const chartHeight = computed(() => props.height);
 const plot = computed(() => ({
@@ -121,6 +167,46 @@ function areaPath(series: ChartSeries) {
   return generator(series.data) ?? "";
 }
 
+const targetPaths = computed(() => {
+  const paths = new Map<string, string>();
+  visibleSeries.value.filter((series) => seriesKind(series) !== "bar").forEach((series) => {
+    paths.set(`${series.id}:line`, linePath(series));
+    if (seriesKind(series) === "area") paths.set(`${series.id}:area`, areaPath(series));
+  });
+  return paths;
+});
+
+watch(targetPaths, (next) => {
+  cancelAnimationFrame(pathFrame);
+  const previous = displayPaths.value;
+  const target = new Map(next);
+  if (!pathsReady || revealProgress.value < 1 || typeof window === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    displayPaths.value = target;
+    pathsReady = true;
+    return;
+  }
+  const transitions = [...target].flatMap(([id, to]) => {
+    const from = previous.get(id);
+    const sameGeometry = from?.replace(/-?\d*\.?\d+(?:e[+-]?\d+)?/gi, "#") === to.replace(/-?\d*\.?\d+(?:e[+-]?\d+)?/gi, "#");
+    return from && from !== to && sameGeometry ? [[id, interpolateString(from, to)] as const] : [];
+  });
+  if (!transitions.length) {
+    displayPaths.value = target;
+    return;
+  }
+  const start = performance.now();
+  const tick = (time: number) => {
+    const progress = Math.min(1, (time - start) / 360);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const framePaths = new Map(target);
+    transitions.forEach(([id, interpolate]) => framePaths.set(id, interpolate(eased)));
+    displayPaths.value = framePaths;
+    if (progress < 1) pathFrame = requestAnimationFrame(tick);
+    else displayPaths.value = target;
+  };
+  pathFrame = requestAnimationFrame(tick);
+}, { flush: "post", immediate: true });
+
 const bars = computed(() => {
   const barSeries = visibleSeries.value.filter((series) => seriesKind(series) === "bar");
   const step = labels.value.length > 1 ? (plotRight.value - plot.value.left) / (labels.value.length - 1) : plotRight.value - plot.value.left;
@@ -172,9 +258,6 @@ const tooltipTotal = computed<number | undefined>(() => {
     .filter((series) => (series.axisId ?? "primary") === primaryAxisId && seriesKind(series) === "bar")
     .reduce((sum, series) => sum + (series.data.find((point) => point.label === activeLabel.value)?.value ?? 0), 0);
 });
-const tooltipLeft = computed(() => Math.min(Math.max(mouse.value.x + 12, 8), width.value - 238));
-const tooltipTop = computed(() => Math.max(12, mouse.value.y - 10));
-
 function handlePointerMove(event: PointerEvent) {
   if (!host.value || !labels.value.length) return;
   const bounds = host.value.getBoundingClientRect();
@@ -184,7 +267,10 @@ function handlePointerMove(event: PointerEvent) {
     return distance < best.distance ? { label, distance } : best;
   }, { label: labels.value[0], distance: Infinity });
   activeLabel.value = nearest.label;
-  mouse.value = { x: localX, y: event.clientY - bounds.top };
+  mouse.value = {
+    x: xScale.value(nearest.label) ?? localX,
+    y: Math.max(plot.value.top, Math.min(plotBottom.value, event.clientY - bounds.top)),
+  };
 }
 function toggleSeries(id: string) {
   const next = new Set(visibleIds.value);
@@ -197,6 +283,25 @@ function toggleSeries(id: string) {
 <template>
   <div ref="host" class="bklit-chart" :style="{ height: `${chartHeight}px` }">
     <svg class="bklit-chart-svg" :viewBox="`0 0 ${width} ${chartHeight}`" :aria-label="ariaLabel" role="img" @pointermove="handlePointerMove" @pointerleave="activeLabel = null">
+      <defs>
+        <clipPath :id="seriesClipId">
+          <rect :x="plot.left" y="0" :width="(plotRight - plot.left) * revealProgress" :height="chartHeight" />
+        </clipPath>
+        <template v-for="series in props.series.filter((item) => seriesKind(item) === 'area')" :key="series.id">
+          <linearGradient :id="areaGradientIdFor(series)" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" :stop-color="seriesColor(series)" stop-opacity=".28" />
+            <stop offset="100%" :stop-color="seriesColor(series)" stop-opacity="0" />
+          </linearGradient>
+        </template>
+        <template v-for="series in props.series.filter((item) => seriesKind(item) !== 'bar')" :key="`line-${series.id}`">
+          <linearGradient :id="lineGradientIdFor(series)" x1="0" x2="1" y1="0" y2="0" gradientUnits="objectBoundingBox">
+            <stop offset="0%" :stop-color="seriesColor(series)" stop-opacity="0" />
+            <stop offset="12%" :stop-color="seriesColor(series)" stop-opacity="1" />
+            <stop offset="88%" :stop-color="seriesColor(series)" stop-opacity="1" />
+            <stop offset="100%" :stop-color="seriesColor(series)" stop-opacity="0" />
+          </linearGradient>
+        </template>
+      </defs>
       <g class="bklit-grid">
         <g v-for="tick in axisTicks" :key="tick.value">
           <line :x1="plot.left" :x2="plotRight" :y1="tick.y" :y2="tick.y" />
@@ -222,13 +327,22 @@ function toggleSeries(id: string) {
         <line :x1="activeX" :x2="activeX" :y1="plot.top" :y2="plotBottom" />
       </g>
 
-      <g class="bklit-series">
+      <g class="bklit-series" :clip-path="`url(#${seriesClipId})`">
         <g v-for="bar in bars" :key="bar.key" class="bklit-bar-series">
-          <rect :x="bar.x" :y="bar.y" :width="bar.width" :height="bar.height" :rx="props.stacked ? 2 : 4" :fill="bar.color" />
+          <BklitAnimatedBar
+            :x="bar.x"
+            :y="bar.y"
+            :width="bar.width"
+            :height="bar.height"
+            :radius="props.stacked ? 2 : 4"
+            :color="bar.color"
+            :delay="bar.pointIndex * 60"
+            :animate-updates="revealProgress >= 1"
+          />
         </g>
         <g v-for="series in visibleSeries.filter((item) => seriesKind(item) !== 'bar')" :key="series.id">
-          <path v-if="seriesKind(series) === 'area'" class="bklit-area-path" :d="areaPath(series)" :fill="seriesColor(series)" :style="{ '--series-color': seriesColor(series) }" />
-          <path class="bklit-line-path" :d="linePath(series)" :stroke="seriesColor(series)" />
+          <path v-if="seriesKind(series) === 'area'" class="bklit-area-path" :d="displayPaths.get(`${series.id}:area`) ?? areaPath(series)" :fill="`url(#${areaGradientIdFor(series)})`" />
+          <path class="bklit-line-path" :d="displayPaths.get(`${series.id}:line`) ?? linePath(series)" :stroke="`url(#${lineGradientIdFor(series)})`" />
           <circle
             v-if="activeLabel && series.data.some((point) => point.label === activeLabel)"
             class="bklit-point-marker"
@@ -261,8 +375,10 @@ function toggleSeries(id: string) {
 
     <BklitTooltip
       :open="activeLabel !== null && tooltipRows.length > 0"
-      :x="tooltipLeft"
-      :y="tooltipTop"
+      :x="mouse.x"
+      :y="mouse.y"
+      :container-width="width"
+      :container-height="chartHeight"
       :label="activeLabel ?? ''"
       :rows="tooltipRows"
       :total="tooltipTotal"

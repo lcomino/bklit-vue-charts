@@ -2,7 +2,7 @@
 
 An unofficial Vue 3 port of the open-source chart components from Bklit UI. The goal is to bring the same precise chart styling, animated hover behavior, and reusable building blocks to Vue applications.
 
-This is a standalone project so it can later be consumed by Fillrate without coupling the chart library to the dashboard. The port is being built in milestones; this first preview includes reusable Cartesian charts, a pie chart, a rolling number, interactive legend toggles, and the animated tooltip foundation.
+This is a standalone project so it can later be consumed by Fillrate without coupling the chart library to the dashboard. The first preview includes reusable Cartesian charts, animated pie and progress-ring charts, interactive legends, and a bounded tooltip with animated values.
 
 ## Current status
 
@@ -13,9 +13,11 @@ This is a standalone project so it can later be consumed by Fillrate without cou
 | Bar chart | Preview |
 | Composed chart | Preview |
 | Pie chart | Preview |
-| Ring / donut chart | Preview |
+| Ring progress chart | Preview |
 | Candlestick, funnel, gauge, radar, scatter, Sankey, heatmap, choropleth, sunburst | Planned |
 | Brush, live chart, markers, reference areas, legends, tooltip/date ticker primitives | In progress |
+
+The preview ports the source interaction patterns for cartesian reveals, staggered bars, spring hover on pie/ring segments, rolling center values, and a tooltip that follows the active x value while staying inside the chart. Pie and ring data use the upstream `label` / `value` shape; ring progress accepts `maxValue` (defaults to `100`).
 
 ## Development
 

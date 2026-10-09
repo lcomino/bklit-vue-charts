@@ -5,7 +5,12 @@
   "type": "module",
   "license": "MIT",
   "description": "An unofficial Vue 3 port of the open-source Bklit UI chart components.",
-  "files": ["dist", "LICENSE", "NOTICE.md", "README.md"],
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE.md",
+    "README.md"
+  ],
   "main": "./dist/bklit-vue-charts.umd.cjs",
   "module": "./dist/bklit-vue-charts.js",
   "types": "./dist/types/index.d.ts",
@@ -29,11 +34,13 @@
   },
   "dependencies": {
     "d3-array": "^3.2.4",
+    "d3-interpolate": "^3.0.1",
     "d3-scale": "^4.0.2",
     "d3-shape": "^3.2.0"
   },
   "devDependencies": {
     "@types/d3-array": "^3.2.1",
+    "@types/d3-interpolate": "^3.0.4",
     "@types/d3-scale": "^4.0.9",
     "@types/d3-shape": "^3.1.6",
     "@types/node": "^22.13.10",

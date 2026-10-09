@@ -27,9 +27,15 @@ export interface ChartAxis {
 }
 
 export interface PieDatum {
-  id: string;
-  name: string;
+  label: string;
   value: number;
+  color?: string;
+}
+
+export interface RingDatum {
+  label: string;
+  value: number;
+  maxValue?: number;
   color?: string;
 }
 
